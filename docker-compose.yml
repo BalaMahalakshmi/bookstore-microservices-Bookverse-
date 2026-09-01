@@ -1,0 +1,133 @@
+services:
+
+  mongodb:
+    image: mongo:7
+    container_name: bookstore-mongodb
+    restart: unless-stopped
+
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+      MONGO_INITDB_DATABASE: bookstore
+
+    volumes:
+      - mongodb_data:/data/db
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--eval",
+          "db.adminCommand('ping')"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+
+  book-service:
+    build: ./book-service
+    container_name: bookstore-book-service
+    restart: unless-stopped
+
+    ports:
+      - "8001:8001"
+
+    environment:
+      MONGODB_URL: mongodb://admin:admin123@mongodb:27017/bookstore?authSource=admin
+      DATABASE_NAME: bookstore
+      SECRET_KEY: cbcd8754963d3701f6a3ce40fc1cd087956aab56cb37cab55d61706d6d47e2c7
+      JWT_ALGORITHM: HS256
+      INTERNAL_SERVICE_TOKEN: bookstore-internal-secret
+
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+
+  user-service:
+    build: ./user-service
+    container_name: bookstore-user-service
+    restart: unless-stopped
+
+    ports:
+      - "8002:8002"
+
+    environment:
+      MONGODB_URL: mongodb://admin:admin123@mongodb:27017/bookstore?authSource=admin
+      DATABASE_NAME: bookstore
+      SECRET_KEY: cbcd8754963d3701f6a3ce40fc1cd087956aab56cb37cab55d61706d6d47e2c7
+      JWT_ALGORITHM: HS256
+      ADMIN_USERNAME: "admin"
+      ADMIN_PASSWORD: "admin123"
+
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+
+  order-service:
+    build: ./order-service
+    container_name: bookstore-order-service
+    restart: unless-stopped
+
+    ports:
+      - "8003:8003"
+
+    environment:
+      MONGODB_URL: mongodb://admin:admin123@mongodb:27017/bookstore?authSource=admin
+      DATABASE_NAME: bookstore
+      SECRET_KEY: cbcd8754963d3701f6a3ce40fc1cd087956aab56cb37cab55d61706d6d47e2c7
+      JWT_ALGORITHM: HS256
+      INTERNAL_SERVICE_TOKEN: bookstore-internal-secret
+
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      book-service:
+        condition: service_started
+
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: bookstore-api-gateway
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      NODE_ENV: production
+      BOOK_SERVICE_URL: http://book-service:8001
+      USER_SERVICE_URL: http://user-service:8002
+      ORDER_SERVICE_URL: http://order-service:8003
+      INTERNAL_SERVICE_TOKEN: bookstore-internal-secret
+
+    depends_on:
+      book-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+
+
+  frontend:
+    build: ./frontend
+    container_name: bookstore-frontend
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+
+    depends_on:
+      api-gateway:
+        condition: service_started
+
+
+volumes:
+  mongodb_data:
+
+
